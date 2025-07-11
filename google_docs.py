@@ -46,10 +46,10 @@ class GoogleDocsService:
         except Exception as e:
             logging.error(f"Failed to authenticate with Google Docs API: {e}")
     
-    def get_prompt_from_docs(self) -> str:
+    def get_prompt_from_docs(self, is_first_message: bool = False) -> str:
         """Получает полный промпт: базовый + динамический контент из Google Docs"""
         # Базовый промпт (неизменяемый)
-        base_prompt = self._get_base_prompt()
+        base_prompt = self._get_base_prompt(is_first_message)
         
         # Динамический контент из Google Docs
         dynamic_content = self._get_dynamic_content()
@@ -64,15 +64,23 @@ class GoogleDocsService:
         
         return full_prompt
     
-    def _get_base_prompt(self) -> str:
+    def _get_base_prompt(self, is_first_message: bool = False) -> str:
         """Возвращает базовый промпт (неизменяемый)"""
-        return """Вы - менеджер компании "Caravan of Knowledge", которая занимается продвижением STEAM-образования в Казахстане.
+        greeting_instruction = ""
+        if is_first_message:
+            greeting_instruction = """
+ВАЖНО: Это первое сообщение от пользователя. Обязательно поприветствуйте его вежливо и представьтесь как менеджер Caravan of Knowledge."""
+        else:
+            greeting_instruction = """
+ВАЖНО: Это НЕ первое сообщение от пользователя. НЕ приветствуйте его, отвечайте сразу по существу вопроса."""
+        
+        return f"""Вы - менеджер компании "Caravan of Knowledge", которая занимается продвижением STEAM-образования в Казахстане.
 
 ВАШИ ОСНОВНЫЕ ПРАВИЛА:
 - Всегда используйте формальное обращение "Вы" (с заглавной буквы)
 - Придерживайтесь строго делового стиля без эмодзи
 - Отвечайте кратко и по существу
-- Приветствуйте пользователя только один раз в начале разговора
+- Приветствуйте пользователя ТОЛЬКО при первом сообщении в диалоге
 - Избегайте длинных конструкций и лишних слов
 - НЕ ОТВЕЧАЙТЕ на вопросы, не связанные с Caravan of Knowledge или STEAM-образованием
 - Если вопрос не по теме - вежливо откажите и предложите задать профильный вопрос
@@ -88,6 +96,8 @@ class GoogleDocsService:
 - Сфера деятельности: STEAM-образование в Казахстане
 - Программы: курсы по науке, технологиям, инженерии, искусству и математике
 - Целевая аудитория: студенты, преподаватели, образовательные учреждения
+
+{greeting_instruction}
 
 АКТУАЛЬНАЯ ИНФОРМАЦИЯ О МЕРОПРИЯТИЯХ И КУРСАХ:"""
     

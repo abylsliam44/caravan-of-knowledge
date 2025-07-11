@@ -10,13 +10,13 @@ AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 
-async def ask_gpt(prompt: str) -> str:
+async def ask_gpt(prompt: str, is_first_message: bool = False) -> str:
     if not (AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT_NAME):
         logging.error("Azure OpenAI credentials are not set!")
         return "Ошибка: не настроены переменные окружения Azure OpenAI."
 
     # Получаем актуальный промпт из Google Docs
-    system_prompt = google_docs_service.get_prompt_from_docs()
+    system_prompt = google_docs_service.get_prompt_from_docs(is_first_message)
     logging.info(f"Using system prompt: {system_prompt[:100]}...")
 
     url = f"{AZURE_OPENAI_ENDPOINT}openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=2024-02-15-preview"

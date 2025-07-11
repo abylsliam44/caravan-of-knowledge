@@ -11,6 +11,18 @@ router = APIRouter()
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
 
+# Простое хранилище для отслеживания состояний диалогов
+# В продакшене лучше использовать Redis или базу данных
+chat_states = {}
+
+def is_first_message(from_number: str) -> bool:
+    """Проверяет, является ли это первым сообщением от пользователя"""
+    if from_number not in chat_states:
+        chat_states[from_number] = {"message_count": 0}
+    
+    chat_states[from_number]["message_count"] += 1
+    return chat_states[from_number]["message_count"] == 1
+
 
 @router.post("/webhook")
 async def receive_greenapi_webhook(payload: dict):
@@ -33,6 +45,10 @@ async def receive_greenapi_webhook(payload: dict):
         if not from_number:
             logging.error("sender not found in webhook payload")
             return {"status": "error", "reason": "sender_not_found"}
+
+        # Проверяем, первое ли это сообщение
+        is_first = is_first_message(from_number)
+        logging.info(f"Первое сообщение от {from_number}: {is_first}")
 
         type_message = message_data.get("typeMessage")
         logging.info(f"typeMessage: {type_message}")
@@ -77,7 +93,7 @@ async def receive_greenapi_webhook(payload: dict):
 
         # Получаем ответ от GPT через Azure OpenAI
         logging.info(f"Передаём в GPT: {text}")
-        gpt_response = await ask_gpt(text)
+        gpt_response = await ask_gpt(text, is_first_message=is_first)
         logging.info(f"Ответ GPT: {gpt_response}")
 
         # Отправляем ответ клиенту
