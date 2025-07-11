@@ -57,7 +57,10 @@ async def receive_greenapi_webhook(payload: dict):
         if type_message == "textMessage":
             text = message_data.get("textMessageData", {}).get("textMessage")
             logging.info(f"Получено текстовое сообщение: {text}")
-
+        # EXTENDED TEXT MESSAGE
+        elif type_message == "extendedTextMessage":
+            text = message_data.get("extendedTextMessageData", {}).get("textMessage")
+            logging.info(f"Получено extendedTextMessage: {text}")
         # VOICE MESSAGE
         elif type_message == "voiceMessage":
             voice_data = message_data.get("voiceMessageData", {})
