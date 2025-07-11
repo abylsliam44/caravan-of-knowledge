@@ -1,0 +1,11 @@
+services:
+  whatsapp-ai-api:
+    build: .
+    container_name: whatsapp-ai-api
+    env_file:
+      - .env
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs 
