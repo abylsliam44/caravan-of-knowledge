@@ -53,15 +53,14 @@ async def receive_greenapi_webhook(payload: dict):
         type_message = message_data.get("typeMessage")
         logging.info(f"typeMessage: {type_message}")
 
-        # TEXT MESSAGE
+        # Универсальный парсер для текстовых сообщений
+        text = None
         if type_message == "textMessage":
             text = message_data.get("textMessageData", {}).get("textMessage")
-            logging.info(f"Получено текстовое сообщение: {text}")
-        # EXTENDED TEXT MESSAGE
+            logging.info(f"Получено textMessage: {text}")
         elif type_message == "extendedTextMessage":
-            text = message_data.get("extendedTextMessageData", {}).get("textMessage")
+            text = message_data.get("extendedTextMessageData", {}).get("text")
             logging.info(f"Получено extendedTextMessage: {text}")
-        # VOICE MESSAGE
         elif type_message == "voiceMessage":
             voice_data = message_data.get("voiceMessageData", {})
             download_url = voice_data.get("downloadUrl")
@@ -83,8 +82,6 @@ async def receive_greenapi_webhook(payload: dict):
                 await send_whatsapp_message(from_number, text)
                 logging.error("voiceMessage: распознавание не удалось")
                 return {"status": "voice_recognition_failed"}
-
-        # UNSUPPORTED TYPE
         else:
             fallback_text = (
                 "Извините, я поддерживаю только текстовые и голосовые сообщения. "
@@ -93,6 +90,13 @@ async def receive_greenapi_webhook(payload: dict):
             await send_whatsapp_message(from_number, fallback_text)
             logging.error(f"unsupported typeMessage: {type_message}")
             return {"status": "unsupported_message_type"}
+
+        # Проверка на пустое или некорректное сообщение
+        if not text or not isinstance(text, str) or not text.strip():
+            fallback_text = "Извините, не удалось распознать сообщение. Пожалуйста, отправьте текст или голосовое сообщение."
+            await send_whatsapp_message(from_number, fallback_text)
+            logging.error("Пустое или некорректное сообщение для GPT")
+            return {"status": "empty_message"}
 
         # Получаем ответ от GPT через Azure OpenAI
         logging.info(f"Передаём в GPT: {text}")
