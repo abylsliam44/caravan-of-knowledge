@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from typing import Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -46,6 +47,36 @@ class GoogleDocsService:
         except Exception as e:
             logging.error(f"Failed to authenticate with Google Docs API: {e}")
     
+    def _clean_links(self, text: str) -> str:
+        """Очищает текст от дублированных ссылок и неправильного форматирования"""
+        if not text:
+            return text
+        
+        # Паттерн для поиска дублированных ссылок вида: URL](URL)
+        # Пример: https://forms.gle/abc123](https://forms.gle/abc123)
+        pattern = r'https://[^\s\]]+?\]\(https://[^\s\)]+?\)'
+        
+        def replace_duplicate_link(match):
+            # Извлекаем только первую часть ссылки (до ])
+            link_text = match.group(0)
+            # Находим позицию первого ]
+            bracket_pos = link_text.find(']')
+            if bracket_pos != -1:
+                # Берем только URL до скобки
+                clean_url = link_text[:bracket_pos]
+                logging.info(f"Cleaned duplicate link: {match.group(0)} -> {clean_url}")
+                return clean_url
+            return match.group(0)
+        
+        # Применяем очистку
+        cleaned_text = re.sub(pattern, replace_duplicate_link, text)
+        
+        # Дополнительная очистка: убираем лишние пробелы и переносы строк
+        cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)  # Убираем множественные пустые строки
+        cleaned_text = re.sub(r' +', ' ', cleaned_text)  # Убираем множественные пробелы
+        
+        return cleaned_text.strip()
+    
     def get_prompt_from_docs(self, is_first_message: bool = False) -> str:
         """Получает полный промпт: базовый + динамический контент из Google Docs"""
         # Базовый промпт (неизменяемый)
@@ -54,11 +85,12 @@ class GoogleDocsService:
         # Динамический контент из Google Docs
         dynamic_content = self._get_dynamic_content()
         
-        # Логируем для диагностики
+        # Очищаем контент от дублированных ссылок
         if dynamic_content:
+            dynamic_content = self._clean_links(dynamic_content)
             # Показываем первые 200 символов для проверки
             preview = dynamic_content[:200] + "..." if len(dynamic_content) > 200 else dynamic_content
-            logging.info(f"Dynamic content preview: {preview}")
+            logging.info(f"Dynamic content preview (cleaned): {preview}")
             logging.info(f"Dynamic content length: {len(dynamic_content)} characters")
             
             full_prompt = f"{base_prompt}\n\n{dynamic_content}"
@@ -170,7 +202,15 @@ class GoogleDocsService:
                 if 'paragraph' in element:
                     for para_element in element['paragraph']['elements']:
                         if 'textRun' in para_element:
-                            text_parts.append(para_element['textRun']['content'])
+                            text_content = para_element['textRun']['content']
+                            # Проверяем, есть ли ссылка в этом элементе
+                            if 'link' in para_element['textRun']:
+                                link_url = para_element['textRun']['link']
+                                # Если ссылка есть, добавляем только URL без дублирования
+                                text_parts.append(link_url)
+                                logging.info(f"Extracted link from Google Docs: {link_url}")
+                            else:
+                                text_parts.append(text_content)
                 
                 # Обрабатываем таблицы
                 elif 'table' in element:
