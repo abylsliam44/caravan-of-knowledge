@@ -28,8 +28,8 @@ class SpeechRecognitionService:
                 subscription=self.azure_speech_key, 
                 region=self.azure_speech_region
             )
-            # Настройка для английского языка
-            self.speech_config.speech_recognition_language = "en-US"
+            # Настройка для русского языка
+            self.speech_config.speech_recognition_language = "ru-RU"
     
     async def download_audio_file(self, media_id: str, access_token: str) -> Optional[bytes]:
         """Скачивает аудиофайл из WhatsApp Cloud API"""
@@ -65,12 +65,22 @@ class SpeechRecognitionService:
             logger.error(f"Error downloading audio file: {e}")
             return None
     
-    def convert_audio_format(self, audio_data: bytes, from_format: Optional[str] = "ogg") -> Optional[bytes]:
+    def convert_audio_format(self, audio_data: bytes, from_format: Optional[str] = None) -> Optional[bytes]:
         """Конвертирует аудио в формат WAV для Azure Speech Services"""
         try:
             # Определяем формат, если не указан явно
             if not from_format:
-                from_format = "ogg"  # Fall back to ogg
+                # Пытаемся определить формат по первым байтам
+                if audio_data.startswith(b'OggS'):
+                    from_format = "ogg"
+                elif audio_data.startswith(b'ID3') or audio_data.startswith(b'\xff\xfb'):
+                    from_format = "mp3"
+                elif audio_data.startswith(b'RIFF'):
+                    from_format = "wav"
+                else:
+                    from_format = "ogg"  # Fall back to ogg
+
+            logger.info(f"Converting audio from format: {from_format}")
 
             # Создаем временный файл для конвертации
             with tempfile.NamedTemporaryFile(suffix=f".{from_format}", delete=False) as temp_input:
@@ -80,9 +90,9 @@ class SpeechRecognitionService:
             # Конвертируем в WAV
             audio = AudioSegment.from_file(temp_input_path, format=from_format)
             
-            # Экспортируем в WAV
+            # Экспортируем в WAV с оптимальными параметрами для распознавания речи
             output_buffer = io.BytesIO()
-            audio.export(output_buffer, format="wav")
+            audio.export(output_buffer, format="wav", parameters=["-ar", "16000", "-ac", "1"])
             wav_data = output_buffer.getvalue()
             
             # Удаляем временный файл
@@ -153,8 +163,9 @@ class SpeechRecognitionService:
                 audio_config=audio_config
             )
             
-            # Распознаем речь
-            result = recognizer.recognize_once_async().get()
+            # Распознаем речь асинхронно
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, recognizer.recognize_once_async().get)
             
             # Удаляем временный файл
             os.unlink(temp_file_path)

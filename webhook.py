@@ -6,22 +6,13 @@ import logging
 from gpt import ask_gpt
 from whatsapp import send_whatsapp_message
 from speech_recognition import speech_service
+from chat_memory import chat_memory
 
 router = APIRouter()
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
 
-# Простое хранилище для отслеживания состояний диалогов
-# В продакшене лучше использовать Redis или базу данных
-chat_states = {}
-
-def is_first_message(from_number: str) -> bool:
-    """Проверяет, является ли это первым сообщением от пользователя"""
-    if from_number not in chat_states:
-        chat_states[from_number] = {"message_count": 0}
-    
-    chat_states[from_number]["message_count"] += 1
-    return chat_states[from_number]["message_count"] == 1
+# Система памяти чатов теперь управляется через chat_memory.py
 
 
 @router.post("/webhook")
@@ -47,7 +38,7 @@ async def receive_greenapi_webhook(payload: dict):
             return {"status": "error", "reason": "sender_not_found"}
 
         # Проверяем, первое ли это сообщение
-        is_first = is_first_message(from_number)
+        is_first = chat_memory.is_first_message(from_number)
         logging.info(f"Первое сообщение от {from_number}: {is_first}")
 
         type_message = message_data.get("typeMessage")
@@ -72,16 +63,31 @@ async def receive_greenapi_webhook(payload: dict):
                 logging.error("voiceMessage: download_url missing")
                 return {"status": "voice_no_url"}
 
-            recognized_text = await speech_service.process_voice_message_by_url(download_url)
-            logging.info(f"Распознанный текст: {recognized_text}")
+            # Проверяем, включено ли распознавание речи
+            if not speech_service.enabled:
+                fallback_text = "Извините, распознавание голосовых сообщений временно недоступно. Пожалуйста, отправьте текст."
+                await send_whatsapp_message(from_number, fallback_text)
+                logging.error("voiceMessage: speech recognition is disabled")
+                return {"status": "speech_disabled"}
 
-            if recognized_text:
-                text = f"[Голосовое сообщение]: {recognized_text}"
-            else:
-                text = "Извините, не удалось распознать голосовое сообщение. Пожалуйста, отправьте текст."
-                await send_whatsapp_message(from_number, text)
-                logging.error("voiceMessage: распознавание не удалось")
-                return {"status": "voice_recognition_failed"}
+            try:
+                recognized_text = await speech_service.process_voice_message_by_url(download_url)
+                logging.info(f"Распознанный текст: {recognized_text}")
+
+                if recognized_text and recognized_text.strip():
+                    text = f"[Голосовое сообщение]: {recognized_text}"
+                    logging.info(f"Голосовое сообщение успешно распознано: {recognized_text}")
+                else:
+                    fallback_text = "Извините, не удалось распознать голосовое сообщение. Пожалуйста, отправьте текст."
+                    await send_whatsapp_message(from_number, fallback_text)
+                    logging.error("voiceMessage: распознавание вернуло пустой результат")
+                    return {"status": "voice_recognition_empty"}
+                    
+            except Exception as e:
+                logging.error(f"Ошибка при обработке голосового сообщения: {e}")
+                fallback_text = "Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, отправьте текст."
+                await send_whatsapp_message(from_number, fallback_text)
+                return {"status": "voice_processing_error", "error": str(e)}
         else:
             fallback_text = (
                 "Извините, я поддерживаю только текстовые и голосовые сообщения. "
@@ -100,7 +106,7 @@ async def receive_greenapi_webhook(payload: dict):
 
         # Получаем ответ от GPT через Azure OpenAI
         logging.info(f"Передаём в GPT: {text}")
-        gpt_response = await ask_gpt(text, is_first_message=is_first)
+        gpt_response = await ask_gpt(text, from_number, is_first_message=is_first)
         logging.info(f"Ответ GPT: {gpt_response}")
 
         # Отправляем ответ клиенту
