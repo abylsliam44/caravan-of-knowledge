@@ -61,22 +61,27 @@ async def receive_greenapi_webhook(payload: dict):
         elif type_message == "extendedTextMessage":
             text = message_data.get("extendedTextMessageData", {}).get("text")
             logging.info(f"Получено extendedTextMessage: {text}")
-        elif type_message == "voiceMessage":
+        elif type_message in ["voiceMessage", "audioMessage"]:
+            # Обрабатываем как голосовое сообщение (voiceMessage или audioMessage)
             voice_data = message_data.get("voiceMessageData", {})
+            if not voice_data:
+                # Попробуем найти данные в audioMessageData
+                voice_data = message_data.get("audioMessageData", {})
+            
             download_url = voice_data.get("downloadUrl")
-            logging.info(f"Получено голосовое сообщение, download_url: {download_url}")
+            logging.info(f"Получено голосовое сообщение (тип: {type_message}), download_url: {download_url}")
 
             if not download_url:
                 fallback_text = "Извините, не удалось обработать голосовое сообщение. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
-                logging.error("voiceMessage: download_url missing")
+                logging.error(f"{type_message}: download_url missing")
                 return {"status": "voice_no_url"}
 
             # Проверяем, включено ли распознавание речи
             if not speech_service.enabled:
                 fallback_text = "Извините, распознавание голосовых сообщений временно недоступно. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
-                logging.error("voiceMessage: speech recognition is disabled")
+                logging.error(f"{type_message}: speech recognition is disabled")
                 return {"status": "speech_disabled"}
 
             try:
@@ -90,7 +95,7 @@ async def receive_greenapi_webhook(payload: dict):
                 else:
                     fallback_text = "Извините, не удалось распознать голосовое сообщение. Пожалуйста, отправьте текст."
                     await send_whatsapp_message(from_number, fallback_text)
-                    logging.error("voiceMessage: распознавание вернуло пустой результат")
+                    logging.error(f"{type_message}: распознавание вернуло пустой результат")
                     return {"status": "voice_recognition_empty"}
                     
             except Exception as e:
