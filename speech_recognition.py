@@ -83,6 +83,12 @@ class SpeechRecognitionService:
                     from_format = "wav"
                 else:
                     from_format = "ogg"  # Fall back to ogg
+            
+            # Исправляем формат для ffmpeg
+            if from_format == "oga":
+                from_format = "ogg"
+            elif from_format == "opus":
+                from_format = "ogg"
 
             logger.info(f"Converting audio from format: {from_format}, size: {len(audio_data)} bytes")
 
@@ -142,7 +148,12 @@ class SpeechRecognitionService:
             # Определяем формат аудио из расширения URL
             from_format = None
             if "." in download_url.rsplit("/", 1)[-1]:
-                from_format = download_url.rsplit(".", 1)[-1].lower()
+                file_extension = download_url.rsplit(".", 1)[-1].lower()
+                # Преобразуем расширения в правильные форматы для ffmpeg
+                if file_extension in ["oga", "opus"]:
+                    from_format = "ogg"
+                else:
+                    from_format = file_extension
 
             wav_data = self.convert_audio_format(audio_data, from_format=from_format)
             if not wav_data:
