@@ -71,6 +71,7 @@ async def receive_greenapi_webhook(payload: dict):
                 return {"status": "speech_disabled"}
 
             try:
+                logging.info(f"Начинаем обработку голосового сообщения для {from_number}")
                 recognized_text = await speech_service.process_voice_message_by_url(download_url)
                 logging.info(f"Распознанный текст: {recognized_text}")
 
@@ -84,7 +85,7 @@ async def receive_greenapi_webhook(payload: dict):
                     return {"status": "voice_recognition_empty"}
                     
             except Exception as e:
-                logging.error(f"Ошибка при обработке голосового сообщения: {e}")
+                logging.error(f"Ошибка при обработке голосового сообщения: {e}", exc_info=True)
                 fallback_text = "Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
                 return {"status": "voice_processing_error", "error": str(e)}

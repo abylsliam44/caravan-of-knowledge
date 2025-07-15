@@ -30,6 +30,9 @@ class SpeechRecognitionService:
             )
             # Настройка для русского языка
             self.speech_config.speech_recognition_language = "ru-RU"
+            # Дополнительные настройки для лучшего распознавания
+            self.speech_config.speech_recognition_mode = "INTERACTIVE"
+            self.speech_config.enable_audio_logging = True
     
     async def download_audio_file(self, media_id: str, access_token: str) -> Optional[bytes]:
         """Скачивает аудиофайл из WhatsApp Cloud API"""
@@ -67,6 +70,7 @@ class SpeechRecognitionService:
     
     def convert_audio_format(self, audio_data: bytes, from_format: Optional[str] = None) -> Optional[bytes]:
         """Конвертирует аудио в формат WAV для Azure Speech Services"""
+        temp_input_path = None
         try:
             # Определяем формат, если не указан явно
             if not from_format:
@@ -80,30 +84,38 @@ class SpeechRecognitionService:
                 else:
                     from_format = "ogg"  # Fall back to ogg
 
-            logger.info(f"Converting audio from format: {from_format}")
+            logger.info(f"Converting audio from format: {from_format}, size: {len(audio_data)} bytes")
 
             # Создаем временный файл для конвертации
             with tempfile.NamedTemporaryFile(suffix=f".{from_format}", delete=False) as temp_input:
                 temp_input.write(audio_data)
                 temp_input_path = temp_input.name
             
+            logger.info(f"Created temporary input file: {temp_input_path}")
+            
             # Конвертируем в WAV
             audio = AudioSegment.from_file(temp_input_path, format=from_format)
+            logger.info(f"Audio loaded: duration={len(audio)}ms, channels={audio.channels}, frame_rate={audio.frame_rate}")
             
             # Экспортируем в WAV с оптимальными параметрами для распознавания речи
             output_buffer = io.BytesIO()
             audio.export(output_buffer, format="wav", parameters=["-ar", "16000", "-ac", "1"])
             wav_data = output_buffer.getvalue()
             
-            # Удаляем временный файл
-            os.unlink(temp_input_path)
-            
             logger.info(f"Converted audio to WAV: {len(wav_data)} bytes")
             return wav_data
             
         except Exception as e:
-            logger.error(f"Error converting audio format: {e}")
+            logger.error(f"Error converting audio format: {e}", exc_info=True)
             return None
+        finally:
+            # Удаляем временный файл
+            if temp_input_path and os.path.exists(temp_input_path):
+                try:
+                    os.unlink(temp_input_path)
+                    logger.info(f"Cleaned up temporary input file: {temp_input_path}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up temporary input file: {e}")
 
     async def download_audio_file_by_url(self, download_url: str) -> Optional[bytes]:
         """Скачивает аудиофайл по прямой ссылке (используется для Green API)."""
@@ -148,11 +160,14 @@ class SpeechRecognitionService:
             logger.warning("Speech recognition is disabled")
             return None
         
+        temp_file_path = None
         try:
             # Создаем временный файл для аудио
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
                 temp_file.write(audio_data)
                 temp_file_path = temp_file.name
+            
+            logger.info(f"Created temporary audio file: {temp_file_path}")
             
             # Настраиваем аудио конфигурацию
             audio_config = AudioConfig(filename=temp_file_path)
@@ -163,26 +178,45 @@ class SpeechRecognitionService:
                 audio_config=audio_config
             )
             
+            logger.info("Starting speech recognition...")
+            
             # Распознаем речь асинхронно
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, recognizer.recognize_once_async().get)
             
-            # Удаляем временный файл
-            os.unlink(temp_file_path)
+            logger.info(f"Speech recognition result reason: {result.reason}")
             
             if result.reason.name == "RecognizedSpeech":
                 recognized_text = result.text
-                logger.info(f"Speech recognized: {recognized_text}")
+                logger.info(f"Speech recognized successfully: {recognized_text}")
                 return recognized_text
-            else:
-                logger.warning(f"Speech recognition failed: {result.reason}")
+            elif result.reason.name == "NoMatch":
+                logger.warning("Speech recognition: No match found")
+                if hasattr(result, 'no_match_details'):
+                    logger.error(f"No match details: {result.no_match_details.reason}")
+                return None
+            elif result.reason.name == "Canceled":
+                logger.warning("Speech recognition was canceled")
                 if hasattr(result, 'cancellation_details'):
-                    logger.error(f"Cancellation details: {result.cancellation_details.reason}, error details: {result.cancellation_details.error_details}")
+                    logger.error(f"Cancellation details: {result.cancellation_details.reason}")
+                    if result.cancellation_details.reason.name == "Error":
+                        logger.error(f"Error details: {result.cancellation_details.error_details}")
+                return None
+            else:
+                logger.warning(f"Speech recognition failed with reason: {result.reason}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error in speech recognition: {e}")
+            logger.error(f"Error in speech recognition: {e}", exc_info=True)
             return None
+        finally:
+            # Удаляем временный файл
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    logger.info(f"Cleaned up temporary file: {temp_file_path}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up temporary file: {e}")
     
     async def process_voice_message(self, media_id: str, access_token: str) -> Optional[str]:
         """Полный процесс обработки голосового сообщения"""
