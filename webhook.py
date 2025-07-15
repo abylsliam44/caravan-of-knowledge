@@ -22,7 +22,16 @@ async def receive_greenapi_webhook(payload: dict):
     try:
         type_webhook = payload.get("typeWebhook")
         logging.info(f"typeWebhook: {type_webhook}")
-        if type_webhook != "incomingMessageReceived":
+        
+        # Добавляем подробное логирование для диагностики
+        logging.info(f"Full payload keys: {list(payload.keys())}")
+        if "messageData" in payload:
+            logging.info(f"messageData keys: {list(payload['messageData'].keys())}")
+            if "typeMessage" in payload["messageData"]:
+                logging.info(f"typeMessage: {payload['messageData']['typeMessage']}")
+        
+        # Проверяем разные возможные типы webhook'ов
+        if type_webhook not in ["incomingMessageReceived", "incomingMessage"]:
             logging.info("Webhook is not an incoming message event, skipping …")
             return {"status": "ignored", "reason": "non_message_webhook"}
 
