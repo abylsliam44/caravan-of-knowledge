@@ -189,30 +189,50 @@ class SpeechRecognitionService:
             logger.warning("Speech recognition is disabled")
             return None
         
-        # Пробуем сначала REST API, потом SDK
+        logger.info("Starting speech recognition...")
+        
+        # Пробуем сначала REST API
+        logger.info("Trying REST API first...")
         try:
-            # REST API метод
             result = await self._recognize_speech_rest_api(audio_data)
             if result:
+                logger.info("REST API recognition successful")
                 return result
+            else:
+                logger.warning("REST API returned no result")
         except Exception as e:
             logger.warning(f"REST API recognition failed: {e}")
         
         # Если REST API не сработал, пробуем SDK
         if AZURE_SDK_AVAILABLE:
+            logger.info("REST API failed, trying SDK...")
             try:
                 result = await self._recognize_speech_sdk(audio_data)
                 if result:
+                    logger.info("SDK recognition successful")
                     return result
+                else:
+                    logger.warning("SDK returned no result")
             except Exception as e:
                 logger.error(f"SDK recognition failed: {e}")
+        else:
+            logger.info("Azure SDK not available, skipping SDK attempt")
         
+        logger.warning("Both REST API and SDK failed to recognize speech")
         return None
     
     async def _recognize_speech_rest_api(self, audio_data: bytes) -> Optional[str]:
         """Распознает речь через REST API Azure Speech Services"""
         try:
-            url = f"https://{self.speech_region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1"
+            # Проверяем, что у нас есть необходимые данные
+            if not self.speech_key or not self.speech_region:
+                logger.error("Missing Azure Speech credentials")
+                return None
+            
+            # Используем правильный endpoint для Azure Speech Services
+            # Убираем возможные пробелы и приводим к нижнему регистру
+            region = self.speech_region.strip().lower()
+            url = f"https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=ru-RU"
             
             headers = {
                 'Ocp-Apim-Subscription-Key': self.speech_key,
@@ -220,10 +240,18 @@ class SpeechRecognitionService:
                 'Accept': 'application/json'
             }
             
+            logger.info(f"Making REST API request to: {url}")
+            logger.info(f"Audio data size: {len(audio_data)} bytes")
+            logger.info(f"Using region: {region}")
+            
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, data=audio_data) as response:
+                async with session.post(url, headers=headers, data=audio_data, timeout=30) as response:
+                    logger.info(f"REST API response status: {response.status}")
+                    
                     if response.status == 200:
                         result = await response.json()
+                        logger.info(f"REST API response: {result}")
+                        
                         if result.get('RecognitionStatus') == 'Success':
                             recognized_text = result.get('DisplayText', '')
                             logger.info(f"REST API recognition successful: {recognized_text}")
@@ -231,11 +259,12 @@ class SpeechRecognitionService:
                         else:
                             logger.warning(f"REST API recognition failed: {result}")
                     else:
-                        logger.error(f"REST API request failed: {response.status}")
+                        response_text = await response.text()
+                        logger.error(f"REST API request failed: {response.status}, response: {response_text}")
             
             return None
         except Exception as e:
-            logger.error(f"Error in REST API recognition: {e}")
+            logger.error(f"Error in REST API recognition: {e}", exc_info=True)
             return None
     
     async def _recognize_speech_sdk(self, audio_data: bytes) -> Optional[str]:
