@@ -36,7 +36,8 @@ class SpeechRecognitionService:
             
             # Инициализируем Azure Speech SDK только если доступен
             self.speech_config = None
-            if AZURE_SDK_AVAILABLE:
+            self.sdk_available = AZURE_SDK_AVAILABLE
+            if self.sdk_available:
                 try:
                     self.speech_config = speechsdk.SpeechConfig(
                         subscription=self.speech_key, 
@@ -46,10 +47,10 @@ class SpeechRecognitionService:
                     logger.info("Azure Speech SDK initialized successfully")
                 except Exception as e:
                     logger.error(f"Failed to initialize Azure Speech SDK: {e}")
-                    AZURE_SDK_AVAILABLE = False
+                    self.sdk_available = False
                     self.speech_config = None
             
-            if not AZURE_SDK_AVAILABLE:
+            if not self.sdk_available:
                 logger.info("Using Azure Speech REST API instead of SDK")
     
     async def download_audio_file(self, media_id: str, access_token: str) -> Optional[bytes]:
@@ -204,7 +205,7 @@ class SpeechRecognitionService:
             logger.warning(f"REST API recognition failed: {e}")
         
         # Если REST API не сработал, пробуем SDK
-        if AZURE_SDK_AVAILABLE:
+        if self.sdk_available:
             logger.info("REST API failed, trying SDK...")
             try:
                 result = await self._recognize_speech_sdk(audio_data)

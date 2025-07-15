@@ -133,7 +133,7 @@ dmypy.json
 logs/
 *.log
 
-# IDE
+# IDEВсе
 .vscode/
 .idea/
 *.swp
