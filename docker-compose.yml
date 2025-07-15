@@ -1,4 +1,5 @@
 services:
+  # Redis только для локальной разработки (не используется на Render)
   redis:
     image: redis:7-alpine
     container_name: whatsapp-redis
@@ -21,7 +22,10 @@ services:
     depends_on:
       - redis
     environment:
+      # Redis URL для локальной разработки
       - REDIS_URL=redis://redis:6379
+      # Переменные для Render (будут переопределены)
+      - PORT=8000
 
 volumes:
   redis_data: 

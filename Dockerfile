@@ -24,6 +24,13 @@ RUN apt-get update && apt-get install -y \
     gstreamer1.0-gtk3 \
     gstreamer1.0-qt5 \
     gstreamer1.0-pulseaudio \
+    # Дополнительные библиотеки для Azure Speech SDK
+    libc6-dev \
+    libgcc-s1 \
+    libstdc++6 \
+    libc6 \
+    libasound2-dev \
+    libpulse-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем рабочую директорию
@@ -44,8 +51,8 @@ ENV PYTHONUNBUFFERED=1
 ENV AZURE_SPEECH_SDK_LOG_LEVEL=INFO
 ENV AZURE_SPEECH_SDK_LOG_FILTER=ALL
 
-# Открываем порт
+# Открываем порт (будет переопределен Render)
 EXPOSE 8000
 
-# Запуск через gunicorn + uvicorn worker
-CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"] 
+# Запуск через gunicorn + uvicorn worker с поддержкой переменной PORT
+CMD gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} 

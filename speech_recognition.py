@@ -15,30 +15,46 @@ AZURE_SDK_AVAILABLE = False
 try:
     import azure.cognitiveservices.speech as speechsdk
     from azure.cognitiveservices.speech.audio import AudioConfig
+    # Проверяем, что SDK действительно работает
     AZURE_SDK_AVAILABLE = True
-except ImportError:
-    logging.warning("Azure Speech SDK not available, will use REST API")
+    logging.info("Azure Speech SDK imported successfully")
+except ImportError as e:
+    logging.warning(f"Azure Speech SDK not available: {e}. Will use REST API")
+except Exception as e:
+    logging.warning(f"Azure Speech SDK import failed: {e}. Will use REST API")
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Проверяем переменные окружения
+logger.info("Checking environment variables...")
+logger.info(f"AZURE_SPEECH_KEY: {'SET' if os.getenv('AZURE_SPEECH_KEY') else 'NOT SET'}")
+logger.info(f"AZURE_SPEECH_REGION: {os.getenv('AZURE_SPEECH_REGION', 'NOT SET')}")
 
 class SpeechRecognitionService:
     def __init__(self):
         self.speech_key = os.getenv("AZURE_SPEECH_KEY")
         self.speech_region = os.getenv("AZURE_SPEECH_REGION")
         
+        logger.info(f"Initializing SpeechRecognitionService with region: {self.speech_region}")
+        logger.info(f"AZURE_SDK_AVAILABLE global variable: {AZURE_SDK_AVAILABLE}")
+        
         if not self.speech_key or not self.speech_region:
             logger.warning("Azure Speech credentials not found. Speech recognition will be disabled.")
             self.enabled = False
+            self.sdk_available = False
+            self.speech_config = None
         else:
             self.enabled = True
             
             # Инициализируем Azure Speech SDK только если доступен
             self.speech_config = None
             self.sdk_available = AZURE_SDK_AVAILABLE
+            
             if self.sdk_available:
                 try:
+                    logger.info("Attempting to initialize Azure Speech SDK...")
                     self.speech_config = speechsdk.SpeechConfig(
                         subscription=self.speech_key, 
                         region=self.speech_region
@@ -349,5 +365,21 @@ class SpeechRecognitionService:
             logger.error(f"Error processing voice message: {e}")
             return None
 
-# Создаем глобальный экземпляр сервиса
-speech_service = SpeechRecognitionService() 
+# Создаем глобальный экземпляр сервиса с обработкой ошибок
+try:
+    speech_service = SpeechRecognitionService()
+    logger.info("SpeechRecognitionService initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize SpeechRecognitionService: {e}")
+    # Создаем fallback сервис
+    class FallbackSpeechService:
+        def __init__(self):
+            self.enabled = False
+            self.sdk_available = False
+            self.speech_config = None
+        
+        async def process_voice_message_by_url(self, download_url: str) -> Optional[str]:
+            logger.warning("Speech recognition is disabled due to initialization error")
+            return None
+    
+    speech_service = FallbackSpeechService() 
