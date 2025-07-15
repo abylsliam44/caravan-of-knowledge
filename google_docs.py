@@ -54,13 +54,18 @@ class GoogleDocsService:
         # Динамический контент из Google Docs
         dynamic_content = self._get_dynamic_content()
         
-        # Объединяем
+        # Логируем для диагностики
         if dynamic_content:
+            # Показываем первые 200 символов для проверки
+            preview = dynamic_content[:200] + "..." if len(dynamic_content) > 200 else dynamic_content
+            logging.info(f"Dynamic content preview: {preview}")
+            logging.info(f"Dynamic content length: {len(dynamic_content)} characters")
+            
             full_prompt = f"{base_prompt}\n\n{dynamic_content}"
             logging.info("Using hybrid prompt: base + dynamic content from Google Docs")
         else:
             full_prompt = base_prompt
-            logging.info("Using base prompt only (no dynamic content)")
+            logging.warning("Using base prompt only (no dynamic content from Google Docs)")
         
         return full_prompt
     
@@ -93,6 +98,9 @@ class GoogleDocsService:
 - НЕ представляйтесь и НЕ используйте фразы типа "[Ваше Имя]" или "менеджер Caravan of Knowledge"
 - Избегайте длинных конструкций и лишних слов
 - Будьте вежливы и профессиональны во всех ответах
+- Поддерживайте общение на русском и казахском языках
+- Если пользователь пишет на казахском - отвечайте на казахском
+- Если пользователь пишет на русском - отвечайте на русском
 
 ПРАВИЛА РАБОТЫ С КОНТЕКСТОМ:
 - ВАЖНО: Учитывайте контекст всего диалога - помните предыдущие сообщения
@@ -154,18 +162,27 @@ class GoogleDocsService:
             document = self.service.documents().get(documentId=self.document_id).execute()
             content = document.get('body', {}).get('content', [])
             
-            # Извлекаем текст из документа
+            # Извлекаем текст из документа, включая таблицы
             text_parts = []
+            
             for element in content:
+                # Обрабатываем обычные параграфы
                 if 'paragraph' in element:
                     for para_element in element['paragraph']['elements']:
                         if 'textRun' in para_element:
                             text_parts.append(para_element['textRun']['content'])
+                
+                # Обрабатываем таблицы
+                elif 'table' in element:
+                    table_content = self._extract_table_content(element['table'])
+                    if table_content:
+                        text_parts.append(table_content)
+                        logging.info("Successfully extracted table content from Google Docs")
             
             dynamic_content = ''.join(text_parts).strip()
             
             if dynamic_content:
-                logging.info("Successfully retrieved dynamic content from Google Docs")
+                logging.info(f"Successfully retrieved dynamic content from Google Docs: {len(dynamic_content)} characters")
                 return dynamic_content
             else:
                 logging.warning("Empty dynamic content from Google Docs")
@@ -177,6 +194,77 @@ class GoogleDocsService:
         except Exception as e:
             logging.error(f"Error reading from Google Docs: {e}")
             return ""
+    
+    def _extract_table_content(self, table) -> str:
+        """Извлекает содержимое таблицы в читаемом формате"""
+        try:
+            table_content = []
+            
+            # Обрабатываем каждую строку таблицы
+            for row in table.get('tableRows', []):
+                row_content = []
+                
+                # Обрабатываем каждую ячейку в строке
+                for cell in row.get('tableCells', []):
+                    cell_text = ""
+                    
+                    # Извлекаем текст из ячейки
+                    for content_element in cell.get('content', []):
+                        if 'paragraph' in content_element:
+                            for para_element in content_element['paragraph'].get('elements', []):
+                                if 'textRun' in para_element:
+                                    cell_text += para_element['textRun']['content']
+                    
+                    # Очищаем текст от лишних пробелов
+                    cell_text = cell_text.strip()
+                    if cell_text:
+                        row_content.append(cell_text)
+                
+                # Объединяем ячейки строки
+                if row_content:
+                    table_content.append(" | ".join(row_content))
+            
+            # Объединяем все строки таблицы
+            if table_content:
+                return "\n".join(table_content) + "\n\n"
+            
+            return ""
+            
+        except Exception as e:
+            logging.error(f"Error extracting table content: {e}")
+            return ""
 
 # Глобальный экземпляр сервиса
-google_docs_service = GoogleDocsService() 
+google_docs_service = GoogleDocsService()
+
+# Метод для тестирования подключения
+def test_google_docs_connection():
+    """Тестирует подключение к Google Docs и показывает содержимое"""
+    try:
+        if not google_docs_service.service:
+            print("❌ Google Docs service not initialized")
+            return
+        
+        if not google_docs_service.document_id:
+            print("❌ GOOGLE_DOCS_ID not set")
+            return
+        
+        print(f"✅ Testing connection to document: {google_docs_service.document_id}")
+        
+        # Получаем содержимое документа
+        content = google_docs_service._get_dynamic_content()
+        
+        if content:
+            print(f"✅ Successfully retrieved content ({len(content)} characters)")
+            print("📄 Content preview:")
+            print("-" * 50)
+            print(content[:500] + "..." if len(content) > 500 else content)
+            print("-" * 50)
+        else:
+            print("❌ No content retrieved from document")
+            
+    except Exception as e:
+        print(f"❌ Error testing Google Docs connection: {e}")
+
+if __name__ == "__main__":
+    test_google_docs_connection() 

@@ -79,14 +79,14 @@ async def receive_greenapi_webhook(payload: dict):
             logging.info(f"Получено голосовое сообщение (тип: {type_message}), download_url: {download_url}, mime_type: {mime_type}, file_name: {file_name}")
 
             if not download_url:
-                fallback_text = "Извините, не удалось обработать голосовое сообщение. Пожалуйста, отправьте текст."
+                fallback_text = "Кешіріңіз, дауыстық хабарламаны өңдеу мүмкін емес. Мәтінді жіберіңіз. / Извините, не удалось обработать голосовое сообщение. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
                 logging.error(f"{type_message}: download_url missing")
                 return {"status": "voice_no_url"}
 
             # Проверяем, включено ли распознавание речи
             if not speech_service.enabled:
-                fallback_text = "Извините, распознавание голосовых сообщений временно недоступно. Пожалуйста, отправьте текст."
+                fallback_text = "Кешіріңіз, дауыстық хабарламаларды тану уақытша қолжетімді емес. Мәтінді жіберіңіз. / Извините, распознавание голосовых сообщений временно недоступно. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
                 logging.error(f"{type_message}: speech recognition is disabled")
                 return {"status": "speech_disabled"}
@@ -97,21 +97,23 @@ async def receive_greenapi_webhook(payload: dict):
                 logging.info(f"Распознанный текст: {recognized_text}")
 
                 if recognized_text and recognized_text.strip():
-                    text = f"[Голосовое сообщение]: {recognized_text}"
+                    text = f"[Дауыстық хабарлама / Голосовое сообщение]: {recognized_text}"
                     logging.info(f"Голосовое сообщение успешно распознано: {recognized_text}")
                 else:
-                    fallback_text = "Извините, не удалось распознать голосовое сообщение. Пожалуйста, отправьте текст."
+                    fallback_text = "Кешіріңіз, дауыстық хабарламаны тану мүмкін емес. Мәтінді жіберіңіз. / Извините, не удалось распознать голосовое сообщение. Пожалуйста, отправьте текст."
                     await send_whatsapp_message(from_number, fallback_text)
                     logging.error(f"{type_message}: распознавание вернуло пустой результат")
                     return {"status": "voice_recognition_empty"}
                     
             except Exception as e:
                 logging.error(f"Ошибка при обработке голосового сообщения: {e}", exc_info=True)
-                fallback_text = "Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, отправьте текст."
+                fallback_text = "Кешіріңіз, дауыстық хабарламаны өңдеу кезінде қате орын алды. Мәтінді жіберіңіз. / Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
                 return {"status": "voice_processing_error", "error": str(e)}
         else:
             fallback_text = (
+                "Кешіріңіз, мен тек мәтін және дауыстық хабарламаларды қолдаймын. "
+                "Мәтін немесе дауыстық хабарлама жіберіңіз. / "
                 "Извините, я поддерживаю только текстовые и голосовые сообщения. "
                 "Пожалуйста, отправьте текст или голосовое сообщение."
             )
@@ -121,7 +123,7 @@ async def receive_greenapi_webhook(payload: dict):
 
         # Проверка на пустое или некорректное сообщение
         if not text or not isinstance(text, str) or not text.strip():
-            fallback_text = "Извините, не удалось распознать сообщение. Пожалуйста, отправьте текст или голосовое сообщение."
+            fallback_text = "Кешіріңіз, хабарламаны тану мүмкін емес. Мәтін немесе дауыстық хабарлама жіберіңіз. / Извините, не удалось распознать сообщение. Пожалуйста, отправьте текст или голосовое сообщение."
             await send_whatsapp_message(from_number, fallback_text)
             logging.error("Пустое или некорректное сообщение для GPT")
             return {"status": "empty_message"}

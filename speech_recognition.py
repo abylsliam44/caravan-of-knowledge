@@ -9,6 +9,7 @@ from azure.cognitiveservices.speech import SpeechConfig, SpeechRecognizer, Audio
 from azure.cognitiveservices.speech.audio import AudioInputStream
 import tempfile
 import io
+from language_detection import detect_language, get_speech_language_code
 
 # Azure Speech SDK (может не работать в Docker)
 AZURE_SDK_AVAILABLE = False
@@ -59,7 +60,9 @@ class SpeechRecognitionService:
                         subscription=self.speech_key, 
                         region=self.speech_region
                     )
+                    # Поддерживаем русский и казахский языки
                     self.speech_config.speech_recognition_language = "ru-RU"
+                    # Для казахского языка можно использовать "kk-KZ"
                     logger.info("Azure Speech SDK initialized successfully")
                 except Exception as e:
                     logger.error(f"Failed to initialize Azure Speech SDK: {e}")
@@ -200,18 +203,25 @@ class SpeechRecognitionService:
             logger.error(f"Error processing voice message by URL: {e}")
             return None
     
-    async def recognize_speech(self, audio_data: bytes) -> Optional[str]:
-        """Распознает речь в аудиофайле"""
+    async def recognize_speech(self, audio_data: bytes, detected_text: Optional[str] = None) -> Optional[str]:
+        """Распознает речь в аудиофайле с поддержкой динамического языка"""
         if not self.enabled:
             logger.warning("Speech recognition is disabled")
             return None
         
-        logger.info("Starting speech recognition...")
+        # Определяем язык на основе предыдущего текста или используем русский по умолчанию
+        language = "ru-RU"
+        if detected_text:
+            detected_lang = detect_language(detected_text)
+            language = get_speech_language_code(detected_lang)
+            logger.info(f"Detected language: {detected_lang}, using speech code: {language}")
+        
+        logger.info(f"Starting speech recognition with language: {language}")
         
         # Пробуем сначала REST API
         logger.info("Trying REST API first...")
         try:
-            result = await self._recognize_speech_rest_api(audio_data)
+            result = await self._recognize_speech_rest_api(audio_data, language)
             if result:
                 logger.info("REST API recognition successful")
                 return result
@@ -224,7 +234,7 @@ class SpeechRecognitionService:
         if self.sdk_available:
             logger.info("REST API failed, trying SDK...")
             try:
-                result = await self._recognize_speech_sdk(audio_data)
+                result = await self._recognize_speech_sdk(audio_data, language)
                 if result:
                     logger.info("SDK recognition successful")
                     return result
@@ -238,7 +248,7 @@ class SpeechRecognitionService:
         logger.warning("Both REST API and SDK failed to recognize speech")
         return None
     
-    async def _recognize_speech_rest_api(self, audio_data: bytes) -> Optional[str]:
+    async def _recognize_speech_rest_api(self, audio_data: bytes, language: str = "ru-RU") -> Optional[str]:
         """Распознает речь через REST API Azure Speech Services"""
         try:
             # Проверяем, что у нас есть необходимые данные
@@ -249,7 +259,8 @@ class SpeechRecognitionService:
             # Используем правильный endpoint для Azure Speech Services
             # Убираем возможные пробелы и приводим к нижнему регистру
             region = self.speech_region.strip().lower()
-            url = f"https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=ru-RU"
+            # Поддерживаем русский, казахский и английский языки
+            url = f"https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language={language}"
             
             headers = {
                 'Ocp-Apim-Subscription-Key': self.speech_key,
@@ -284,7 +295,7 @@ class SpeechRecognitionService:
             logger.error(f"Error in REST API recognition: {e}", exc_info=True)
             return None
     
-    async def _recognize_speech_sdk(self, audio_data: bytes) -> Optional[str]:
+    async def _recognize_speech_sdk(self, audio_data: bytes, language: str = "ru-RU") -> Optional[str]:
         """Распознает речь через Azure Speech SDK"""
         temp_file_path = None
         try:
@@ -298,9 +309,16 @@ class SpeechRecognitionService:
             # Настраиваем аудио конфигурацию
             audio_config = AudioConfig(filename=temp_file_path)
             
+            # Создаем временную конфигурацию речи с нужным языком
+            temp_speech_config = speechsdk.SpeechConfig(
+                subscription=self.speech_key, 
+                region=self.speech_region
+            )
+            temp_speech_config.speech_recognition_language = language
+            
             # Создаем распознаватель речи
             recognizer = speechsdk.SpeechRecognizer(
-                speech_config=self.speech_config, 
+                speech_config=temp_speech_config, 
                 audio_config=audio_config
             )
             
