@@ -10,29 +10,47 @@ from azure.cognitiveservices.speech.audio import AudioInputStream
 import tempfile
 import io
 
+# Azure Speech SDK (может не работать в Docker)
+try:
+    import azure.cognitiveservices.speech as speechsdk
+    from azure.cognitiveservices.speech.audio import AudioConfig
+    AZURE_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_SDK_AVAILABLE = False
+    logging.warning("Azure Speech SDK not available, will use REST API")
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SpeechRecognitionService:
     def __init__(self):
-        self.azure_speech_key = os.getenv("AZURE_SPEECH_KEY")
-        self.azure_speech_region = os.getenv("AZURE_SPEECH_REGION")
+        self.speech_key = os.getenv("AZURE_SPEECH_KEY")
+        self.speech_region = os.getenv("AZURE_SPEECH_REGION")
         
-        if not self.azure_speech_key or not self.azure_speech_region:
+        if not self.speech_key or not self.speech_region:
             logger.warning("Azure Speech credentials not found. Speech recognition will be disabled.")
             self.enabled = False
         else:
             self.enabled = True
-            self.speech_config = SpeechConfig(
-                subscription=self.azure_speech_key, 
-                region=self.azure_speech_region
-            )
-            # Настройка для русского языка
-            self.speech_config.speech_recognition_language = "ru-RU"
-            # Дополнительные настройки для лучшего распознавания
-            self.speech_config.speech_recognition_mode = "INTERACTIVE"
-            self.speech_config.enable_audio_logging = True
+            
+            # Инициализируем Azure Speech SDK только если доступен
+            self.speech_config = None
+            if AZURE_SDK_AVAILABLE:
+                try:
+                    self.speech_config = speechsdk.SpeechConfig(
+                        subscription=self.speech_key, 
+                        region=self.speech_region
+                    )
+                    self.speech_config.speech_recognition_language = "ru-RU"
+                    logger.info("Azure Speech SDK initialized successfully")
+                except Exception as e:
+                    logger.error(f"Failed to initialize Azure Speech SDK: {e}")
+                    AZURE_SDK_AVAILABLE = False
+                    self.speech_config = None
+            
+            if not AZURE_SDK_AVAILABLE:
+                logger.info("Using Azure Speech REST API instead of SDK")
     
     async def download_audio_file(self, media_id: str, access_token: str) -> Optional[bytes]:
         """Скачивает аудиофайл из WhatsApp Cloud API"""
@@ -171,6 +189,57 @@ class SpeechRecognitionService:
             logger.warning("Speech recognition is disabled")
             return None
         
+        # Пробуем сначала REST API, потом SDK
+        try:
+            # REST API метод
+            result = await self._recognize_speech_rest_api(audio_data)
+            if result:
+                return result
+        except Exception as e:
+            logger.warning(f"REST API recognition failed: {e}")
+        
+        # Если REST API не сработал, пробуем SDK
+        if AZURE_SDK_AVAILABLE:
+            try:
+                result = await self._recognize_speech_sdk(audio_data)
+                if result:
+                    return result
+            except Exception as e:
+                logger.error(f"SDK recognition failed: {e}")
+        
+        return None
+    
+    async def _recognize_speech_rest_api(self, audio_data: bytes) -> Optional[str]:
+        """Распознает речь через REST API Azure Speech Services"""
+        try:
+            url = f"https://{self.speech_region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1"
+            
+            headers = {
+                'Ocp-Apim-Subscription-Key': self.speech_key,
+                'Content-Type': 'audio/wav',
+                'Accept': 'application/json'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=audio_data) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('RecognitionStatus') == 'Success':
+                            recognized_text = result.get('DisplayText', '')
+                            logger.info(f"REST API recognition successful: {recognized_text}")
+                            return recognized_text
+                        else:
+                            logger.warning(f"REST API recognition failed: {result}")
+                    else:
+                        logger.error(f"REST API request failed: {response.status}")
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error in REST API recognition: {e}")
+            return None
+    
+    async def _recognize_speech_sdk(self, audio_data: bytes) -> Optional[str]:
+        """Распознает речь через Azure Speech SDK"""
         temp_file_path = None
         try:
             # Создаем временный файл для аудио
@@ -184,41 +253,41 @@ class SpeechRecognitionService:
             audio_config = AudioConfig(filename=temp_file_path)
             
             # Создаем распознаватель речи
-            recognizer = SpeechRecognizer(
+            recognizer = speechsdk.SpeechRecognizer(
                 speech_config=self.speech_config, 
                 audio_config=audio_config
             )
             
-            logger.info("Starting speech recognition...")
+            logger.info("Starting SDK speech recognition...")
             
             # Распознаем речь асинхронно
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, recognizer.recognize_once_async().get)
             
-            logger.info(f"Speech recognition result reason: {result.reason}")
+            logger.info(f"SDK speech recognition result reason: {result.reason}")
             
             if result.reason.name == "RecognizedSpeech":
                 recognized_text = result.text
-                logger.info(f"Speech recognized successfully: {recognized_text}")
+                logger.info(f"SDK speech recognized successfully: {recognized_text}")
                 return recognized_text
             elif result.reason.name == "NoMatch":
-                logger.warning("Speech recognition: No match found")
+                logger.warning("SDK speech recognition: No match found")
                 if hasattr(result, 'no_match_details'):
                     logger.error(f"No match details: {result.no_match_details.reason}")
                 return None
             elif result.reason.name == "Canceled":
-                logger.warning("Speech recognition was canceled")
+                logger.warning("SDK speech recognition was canceled")
                 if hasattr(result, 'cancellation_details'):
                     logger.error(f"Cancellation details: {result.cancellation_details.reason}")
                     if result.cancellation_details.reason.name == "Error":
                         logger.error(f"Error details: {result.cancellation_details.error_details}")
                 return None
             else:
-                logger.warning(f"Speech recognition failed with reason: {result.reason}")
+                logger.warning(f"SDK speech recognition failed with reason: {result.reason}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error in speech recognition: {e}", exc_info=True)
+            logger.error(f"Error in SDK speech recognition: {e}", exc_info=True)
             return None
         finally:
             # Удаляем временный файл
