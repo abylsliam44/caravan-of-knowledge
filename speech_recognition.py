@@ -11,12 +11,12 @@ import tempfile
 import io
 
 # Azure Speech SDK (может не работать в Docker)
+AZURE_SDK_AVAILABLE = False
 try:
     import azure.cognitiveservices.speech as speechsdk
     from azure.cognitiveservices.speech.audio import AudioConfig
     AZURE_SDK_AVAILABLE = True
 except ImportError:
-    AZURE_SDK_AVAILABLE = False
     logging.warning("Azure Speech SDK not available, will use REST API")
 
 # Настройка логирования
