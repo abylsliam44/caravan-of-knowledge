@@ -9,6 +9,21 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libcurl4 \
     libffi-dev \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libgstreamer-plugins-bad1.0-0 \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    gstreamer1.0-tools \
+    gstreamer1.0-x \
+    gstreamer1.0-alsa \
+    gstreamer1.0-gl \
+    gstreamer1.0-gtk3 \
+    gstreamer1.0-qt5 \
+    gstreamer1.0-pulseaudio \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем рабочую директорию
@@ -26,6 +41,8 @@ COPY . .
 
 # Переменные окружения
 ENV PYTHONUNBUFFERED=1
+ENV AZURE_SPEECH_SDK_LOG_LEVEL=INFO
+ENV AZURE_SPEECH_SDK_LOG_FILTER=ALL
 
 # Открываем порт
 EXPOSE 8000
