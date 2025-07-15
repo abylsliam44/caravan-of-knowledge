@@ -63,13 +63,20 @@ async def receive_greenapi_webhook(payload: dict):
             logging.info(f"Получено extendedTextMessage: {text}")
         elif type_message in ["voiceMessage", "audioMessage"]:
             # Обрабатываем как голосовое сообщение (voiceMessage или audioMessage)
-            voice_data = message_data.get("voiceMessageData", {})
-            if not voice_data:
-                # Попробуем найти данные в audioMessageData
-                voice_data = message_data.get("audioMessageData", {})
+            # Согласно документации Green API, данные находятся в fileMessageData
+            file_data = message_data.get("fileMessageData", {})
+            if not file_data:
+                # Fallback для старого формата
+                file_data = message_data.get("voiceMessageData", {})
+            if not file_data:
+                # Fallback для audioMessageData
+                file_data = message_data.get("audioMessageData", {})
             
-            download_url = voice_data.get("downloadUrl")
-            logging.info(f"Получено голосовое сообщение (тип: {type_message}), download_url: {download_url}")
+            download_url = file_data.get("downloadUrl")
+            mime_type = file_data.get("mimeType", "")
+            file_name = file_data.get("fileName", "")
+            
+            logging.info(f"Получено голосовое сообщение (тип: {type_message}), download_url: {download_url}, mime_type: {mime_type}, file_name: {file_name}")
 
             if not download_url:
                 fallback_text = "Извините, не удалось обработать голосовое сообщение. Пожалуйста, отправьте текст."
