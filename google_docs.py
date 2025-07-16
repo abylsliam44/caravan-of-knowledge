@@ -52,11 +52,19 @@ class GoogleDocsService:
         if not text:
             return text
         
-        # Паттерн для поиска дублированных ссылок вида: URL](URL)
+        # Паттерн 1: Дублированные ссылки вида: URL](URL)
         # Пример: https://forms.gle/abc123](https://forms.gle/abc123)
-        pattern = r'https://[^\s\]]+?\]\(https://[^\s\)]+?\)'
+        pattern1 = r'https://[^\s\]]+?\]\(https://[^\s\)]+?\)'
         
-        def replace_duplicate_link(match):
+        # Паттерн 2: Markdown ссылки с дублированным URL: [URL](URL)
+        # Пример: [https://caravanofknowledge.com/murager](https://caravanofknowledge.com/murager)
+        pattern2 = r'\[(https://[^\s\]]+?)\]\(\1\)'
+        
+        # Паттерн 3: Простые дублированные URL подряд
+        # Пример: https://example.com https://example.com
+        pattern3 = r'(https://[^\s]+?)\s+\1'
+        
+        def replace_duplicate_link1(match):
             # Извлекаем только первую часть ссылки (до ])
             link_text = match.group(0)
             # Находим позицию первого ]
@@ -64,12 +72,26 @@ class GoogleDocsService:
             if bracket_pos != -1:
                 # Берем только URL до скобки
                 clean_url = link_text[:bracket_pos]
-                logging.info(f"Cleaned duplicate link: {match.group(0)} -> {clean_url}")
+                logging.info(f"Cleaned duplicate link (pattern1): {match.group(0)} -> {clean_url}")
                 return clean_url
             return match.group(0)
         
-        # Применяем очистку
-        cleaned_text = re.sub(pattern, replace_duplicate_link, text)
+        def replace_duplicate_link2(match):
+            # Для markdown ссылок берем только URL из группы
+            clean_url = match.group(1)
+            logging.info(f"Cleaned duplicate link (pattern2): {match.group(0)} -> {clean_url}")
+            return clean_url
+        
+        def replace_duplicate_link3(match):
+            # Для простых дублированных URL берем только первый
+            clean_url = match.group(1)
+            logging.info(f"Cleaned duplicate link (pattern3): {match.group(0)} -> {clean_url}")
+            return clean_url
+        
+        # Применяем очистку по всем паттернам
+        cleaned_text = re.sub(pattern1, replace_duplicate_link1, text)
+        cleaned_text = re.sub(pattern2, replace_duplicate_link2, cleaned_text)
+        cleaned_text = re.sub(pattern3, replace_duplicate_link3, cleaned_text)
         
         # Дополнительная очистка: убираем лишние пробелы и переносы строк
         cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)  # Убираем множественные пустые строки
@@ -253,7 +275,15 @@ class GoogleDocsService:
                         if 'paragraph' in content_element:
                             for para_element in content_element['paragraph'].get('elements', []):
                                 if 'textRun' in para_element:
-                                    cell_text += para_element['textRun']['content']
+                                    text_content = para_element['textRun']['content']
+                                    # Проверяем, есть ли ссылка в этом элементе
+                                    if 'link' in para_element['textRun']:
+                                        link_url = para_element['textRun']['link']
+                                        # Если ссылка есть, добавляем только URL без дублирования
+                                        cell_text += link_url
+                                        logging.info(f"Extracted link from table cell: {link_url}")
+                                    else:
+                                        cell_text += text_content
                     
                     # Очищаем текст от лишних пробелов
                     cell_text = cell_text.strip()
