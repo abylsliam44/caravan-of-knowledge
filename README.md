@@ -23,8 +23,7 @@
 
 1. **Клонируйте репозиторий:**
 ```bash
-git clone <repository-url>
-cd whatsapp-bot
+git clone https://github.com/abylsliam44/caravan-of-knowledge
 ```
 
 2. **Установите зависимости:**
