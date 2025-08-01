@@ -4,7 +4,7 @@ import sys
 import logging
 
 from gpt import ask_gpt
-from whatsapp import send_whatsapp_message
+from whatsapp import send_whatsapp_message, test_green_api_connection
 from speech_recognition import speech_service
 from chat_memory import chat_memory
 
@@ -13,6 +13,12 @@ router = APIRouter()
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
 
 # Система памяти чатов теперь управляется через chat_memory.py
+
+@router.get("/test-connection")
+async def test_connection():
+    """Test Green API connection"""
+    result = await test_green_api_connection()
+    return result
 
 
 @router.post("/webhook")
@@ -110,7 +116,12 @@ async def receive_greenapi_webhook(payload: dict):
                 fallback_text = "Кешіріңіз, дауыстық хабарламаны өңдеу кезінде қате орын алды. Мәтінді жіберіңіз. / Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, отправьте текст."
                 await send_whatsapp_message(from_number, fallback_text)
                 return {"status": "voice_processing_error", "error": str(e)}
+        elif type_message == "deletedMessage":
+            # Игнорируем удаленные сообщения
+            logging.info(f"Ignoring deleted message from {from_number}")
+            return {"status": "ignored", "reason": "deleted_message"}
         else:
+            # Для других типов сообщений (изображения, документы и т.д.)
             fallback_text = (
                 "Кешіріңіз, мен тек мәтін және дауыстық хабарламаларды қолдаймын. "
                 "Мәтін немесе дауыстық хабарлама жіберіңіз. / "

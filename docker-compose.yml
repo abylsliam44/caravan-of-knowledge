@@ -24,7 +24,7 @@ services:
     environment:
       # Redis URL для локальной разработки
       - REDIS_URL=redis://redis:6379
-      # Переменные для Render (будут переопределены)
+      # Переменные для Render
       - PORT=8000
 
 volumes:
