@@ -2,15 +2,23 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 import sys
 import logging
+import os
+import httpx
+from datetime import datetime
 
 from gpt import ask_gpt
 from whatsapp import send_whatsapp_message, test_green_api_connection
-from speech_recognition import speech_service
+from whisper_recognition import speech_service
 from chat_memory import chat_memory
 
 router = APIRouter()
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
+
+# n8n Configuration
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
+N8N_SECRET_TOKEN = os.getenv("N8N_SECRET_TOKEN", "")
+USE_N8N = os.getenv("USE_N8N", "false").lower() == "true"
 
 # Система памяти чатов теперь управляется через chat_memory.py
 
@@ -139,8 +147,18 @@ async def receive_greenapi_webhook(payload: dict):
             logging.error("Пустое или некорректное сообщение для GPT")
             return {"status": "empty_message"}
 
-        # Получаем ответ от GPT через Azure OpenAI
-        logging.info(f"Передаём в GPT: {text}")
+        # Если n8n включен, отправляем туда
+        if USE_N8N and N8N_WEBHOOK_URL:
+            try:
+                logging.info(f"Отправляем в n8n: {text}")
+                result = await send_to_n8n(from_number, text, is_first)
+                return result
+            except Exception as e:
+                logging.error(f"n8n error: {e}, fallback to direct GPT")
+                # Fallback на обычный GPT если n8n не доступен
+        
+        # Получаем ответ от GPT напрямую (без n8n)
+        logging.info(f"Передаём в GPT напрямую: {text}")
         gpt_response = await ask_gpt(text, from_number, is_first_message=is_first)
         logging.info(f"Ответ GPT: {gpt_response}")
 
@@ -155,4 +173,67 @@ async def receive_greenapi_webhook(payload: dict):
     except Exception as e:
         logging.error(f"Ошибка обработки webhook: {e}", exc_info=True)
         print(f"Ошибка обработки webhook: {e}")
-        return JSONResponse(status_code=500, content={"detail": str(e)}) 
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+async def send_to_n8n(phone: str, message: str, is_first: bool) -> dict:
+    """Отправка сообщения в n8n для обработки AI-агентом"""
+    try:
+        # Получаем историю чата
+        chat_history = chat_memory.get_messages_for_gpt(phone)
+        
+        # Получаем промпты из Google Docs (если настроено)
+        from google_docs import google_docs_service
+        system_prompt = google_docs_service.get_prompt_from_docs(is_first)
+        
+        # Формируем payload для n8n (включая Google Docs промпты!)
+        payload = {
+            "phone": phone,
+            "message": message,
+            "chat_history": chat_history,
+            "is_first_message": is_first,
+            "system_prompt": system_prompt,  # ← Промпты из Google Docs!
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Добавляем auth header если есть secret token
+        headers = {"Content-Type": "application/json"}
+        if N8N_SECRET_TOKEN:
+            headers["Authorization"] = f"Bearer {N8N_SECRET_TOKEN}"
+        
+        logging.info(f"Sending to n8n: {N8N_WEBHOOK_URL}")
+        
+        # Отправляем в n8n с таймаутом 120 сек (для cold start)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                N8N_WEBHOOK_URL,
+                json=payload,
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                agent_response = result.get("response", "")
+                
+                logging.info(f"n8n response: {agent_response[:100]}...")
+                
+                # Отправляем ответ пользователю
+                await send_whatsapp_message(phone, agent_response)
+                
+                # Сохраняем в память
+                chat_memory.add_message(phone, "user", message)
+                chat_memory.add_message(phone, "assistant", agent_response)
+                
+                return {
+                    "status": "ok",
+                    "response": agent_response,
+                    "agent": result.get("agent_used", "n8n_agent"),
+                    "sources": result.get("sources", [])
+                }
+            else:
+                logging.error(f"n8n returned {response.status_code}: {response.text}")
+                raise Exception(f"n8n error: {response.status_code}")
+                
+    except Exception as e:
+        logging.error(f"Error in n8n processing: {e}", exc_info=True)
+        raise 

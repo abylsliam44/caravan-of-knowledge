@@ -7,14 +7,16 @@ from chat_memory import chat_memory
 
 load_dotenv()
 
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+# Поддержка обоих форматов: OPEN_AI_KEY и OPENAI_API_KEY
+OPENAI_API_KEY = os.getenv("OPEN_AI_KEY") or os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", "512"))
+OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
 async def ask_gpt(prompt: str, phone_number: str, is_first_message: bool = False) -> str:
-    if not (AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT_NAME):
-        logging.error("Azure OpenAI credentials are not set!")
-        return "Ошибка: не настроены переменные окружения Azure OpenAI."
+    if not OPENAI_API_KEY:
+        logging.error("OpenAI API key is not set!")
+        return "Ошибка: не настроена переменная окружения OPEN_AI_KEY или OPENAI_API_KEY."
 
     # Получаем актуальный промпт из Google Docs
     system_prompt = google_docs_service.get_prompt_from_docs(is_first_message)
@@ -41,15 +43,16 @@ async def ask_gpt(prompt: str, phone_number: str, is_first_message: bool = False
         context_summary = " | ".join([f"{msg['role']}: {msg['content'][:50]}..." for msg in recent_context])
         logging.info(f"Recent context: {context_summary}")
 
-    url = f"{AZURE_OPENAI_ENDPOINT}openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=2024-02-15-preview"
+    url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "api-key": AZURE_OPENAI_API_KEY,
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
+        "model": OPENAI_MODEL,
         "messages": messages,
-        "max_tokens": 512,
-        "temperature": 0.7
+        "max_tokens": OPENAI_MAX_TOKENS,
+        "temperature": OPENAI_TEMPERATURE
     }
     
     logging.info(f"Sending request to GPT with {len(messages)} messages")
@@ -67,5 +70,5 @@ async def ask_gpt(prompt: str, phone_number: str, is_first_message: bool = False
             logging.info(f"GPT response saved to chat history for {phone_number}")
             return gpt_response
         else:
-            logging.error(f"Azure OpenAI error: {resp.status_code} {resp.text}")
-            return f"Ошибка Azure OpenAI: {resp.status_code} {resp.text}" 
+            logging.error(f"OpenAI API error: {resp.status_code} {resp.text}")
+            return f"Ошибка OpenAI API: {resp.status_code} {resp.text}" 

@@ -4,12 +4,14 @@ from typing import List, Dict, Optional
 import redis
 import os
 from datetime import datetime
+from database import db  # PostgreSQL для долгосрочного хранения
 
 class ChatMemory:
     def __init__(self):
         """Инициализация системы памяти чатов"""
         self.redis_client = None
-        self.max_messages_per_chat = 20  # Максимальное количество сообщений в истории
+        # Максимальное количество сообщений (можно увеличить до 50-100)
+        self.max_messages_per_chat = int(os.getenv("MAX_CHAT_HISTORY", "20"))
         
         # Подключение к Redis
         try:
@@ -45,9 +47,11 @@ class ChatMemory:
                 if len(history) > self.max_messages_per_chat:
                     history = history[-self.max_messages_per_chat:]
                 
+                # TTL настраивается через env (по умолчанию 7 дней)
+                ttl_seconds = int(os.getenv("CHAT_HISTORY_TTL", "604800"))  # 7 дней
                 self.redis_client.setex(
                     chat_key, 
-                    86400,  # TTL: 24 часа
+                    ttl_seconds,
                     json.dumps(history, ensure_ascii=False)
                 )
             else:
@@ -61,7 +65,11 @@ class ChatMemory:
                 if len(self._in_memory_storage[phone_number]) > self.max_messages_per_chat:
                     self._in_memory_storage[phone_number] = self._in_memory_storage[phone_number][-self.max_messages_per_chat:]
             
-            logging.info(f"Added message to chat history for {phone_number}")
+            logging.info(f"Added message to Redis for {phone_number}")
+            
+            # ПАРАЛЛЕЛЬНО сохраняем в PostgreSQL для долгосрочного хранения
+            if db.enabled:
+                db.save_message(phone_number, role, content)
             
         except Exception as e:
             logging.error(f"Error adding message to chat history: {e}")
@@ -137,6 +145,26 @@ class ChatMemory:
         """Проверяет, является ли это первым сообщением в чате"""
         history = self.get_chat_history(phone_number)
         return len(history) == 0
+    
+    def get_full_history_from_db(self, phone_number: str, limit: int = 1000) -> List[Dict]:
+        """Получает ПОЛНУЮ историю из PostgreSQL (для аналитики, экспорта)"""
+        if db.enabled:
+            return db.get_chat_history(phone_number, limit)
+        else:
+            logging.warning("PostgreSQL not available, returning Redis history only")
+            return self.get_chat_history(phone_number)
+    
+    def get_all_chat_numbers(self) -> List[str]:
+        """Получает список всех номеров телефонов с которыми были диалоги"""
+        if db.enabled:
+            return db.get_all_chats()
+        else:
+            # Fallback на Redis (только активные чаты)
+            if self.redis_client:
+                keys = self.redis_client.keys("chat_history:*")
+                return [key.replace("chat_history:", "") for key in keys]
+            else:
+                return list(self._in_memory_storage.keys())
 
 # Глобальный экземпляр системы памяти
 chat_memory = ChatMemory() 

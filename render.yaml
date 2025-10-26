@@ -1,0 +1,90 @@
+# Render.com Configuration для WhatsApp AI Bot
+# Этот файл автоматически деплоит бота на Render
+
+services:
+  # WhatsApp Bot API
+  - type: web
+    name: whatsapp-ai-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free  # Можно поменять на starter ($7/мес) для продакшна
+    autoDeploy: true
+    
+    envVars:
+      # WhatsApp (Green API)
+      - key: GREEN_ID_INSTANCE
+        sync: false  # Устанавливается вручную в Render Dashboard
+      - key: GREEN_API_TOKEN
+        sync: false
+      - key: GREEN_API_URL
+        value: https://api.green-api.com
+      
+      # OpenAI API (поддерживаем оба формата имен)
+      - key: OPEN_AI_KEY
+        sync: false  # Основная переменная
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: OPENAI_MAX_TOKENS
+        value: 512
+      - key: OPENAI_TEMPERATURE
+        value: 0.7
+      
+      # n8n Integration (работает ВМЕСТЕ с Google Docs)
+      - key: USE_N8N
+        value: false  # Переключите на true после деплоя n8n
+      - key: N8N_WEBHOOK_URL
+        value: https://YOUR-N8N-URL.onrender.com/webhook/whatsapp-agent
+      - key: N8N_SECRET_TOKEN
+        sync: false
+      
+      # Google Docs (опционально, для динамических промптов)
+      # Минимальные 3 переменные (остальные опциональны)
+      - key: GOOGLE_DOCS_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT
+        sync: false  # email service account
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false  # должен содержать \n для переносов
+      
+      # Опциональные Google переменные (с дефолтами в коде)
+      - key: GOOGLE_PROJECT_ID
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY_ID
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_X509_CERT_URL
+        sync: false
+      
+      # Redis (краткосрочная память для GPT контекста)
+      - key: REDIS_URL
+        sync: false  # Подключите Render Redis Add-on
+      
+      # PostgreSQL (долгосрочная история чатов)
+      - key: DATABASE_URL
+        sync: false  # Подключите Render PostgreSQL
+      
+      # Memory settings (настройки памяти чатов)
+      - key: MAX_CHAT_HISTORY
+        value: 50
+      - key: CHAT_HISTORY_TTL
+        value: 604800
+      
+      # Server Config
+      - key: PORT
+        value: 8000
+      - key: LOG_LEVEL
+        value: INFO
+    
+    # Health check
+    healthCheckPath: /health
+
+  # Redis для краткосрочной памяти (быстрый доступ для GPT)
+  - type: redis
+    name: whatsapp-redis
+    plan: free  # 25 MB бесплатно
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+  
+  # PostgreSQL будет на Neon (подключите DATABASE_URL вручную)
+

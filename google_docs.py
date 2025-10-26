@@ -10,8 +10,9 @@ class GoogleDocsService:
     def __init__(self):
         self.credentials = None
         self.service = None
-        self.document_id = os.getenv("GOOGLE_DOCS_ID")
-        self.service_account_email = os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+        # Поддержка обоих форматов имен переменных
+        self.document_id = os.getenv("GOOGLE_DOCS_ID") or os.getenv("GOOGLE_DOCUMENT_ID")
+        self.service_account_email = os.getenv("GOOGLE_SERVICE_ACCOUNT") or os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL") or os.getenv("GOOGLE_CLIENT_EMAIL")
         self.private_key = os.getenv("GOOGLE_PRIVATE_KEY")
         
         if not self.document_id:
@@ -27,23 +28,30 @@ class GoogleDocsService:
     def _authenticate(self):
         """Аутентификация в Google API"""
         try:
-            # Создаем credentials из переменных окружения
-            self.credentials = service_account.Credentials.from_service_account_info({
+            # Создаем минимальные credentials из переменных окружения
+            # Поддерживаем как полную конфигурацию, так и упрощенную
+            credentials_info = {
                 "type": "service_account",
-                "project_id": os.getenv("GOOGLE_PROJECT_ID"),
-                "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
+                "project_id": os.getenv("GOOGLE_PROJECT_ID", "default-project"),
+                "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID", "1"),
                 "private_key": self.private_key,
                 "client_email": self.service_account_email,
-                "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                "client_id": os.getenv("GOOGLE_CLIENT_ID", "123456789"),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_X509_CERT_URL"),
+                "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_X509_CERT_URL", 
+                    f"https://www.googleapis.com/robot/v1/metadata/x509/{self.service_account_email.replace('@', '%40')}"),
                 "universe_domain": "googleapis.com"
-            }, scopes=['https://www.googleapis.com/auth/documents.readonly'])
+            }
+            
+            self.credentials = service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=['https://www.googleapis.com/auth/documents.readonly']
+            )
             
             self.service = build('docs', 'v1', credentials=self.credentials)
-            logging.info("Google Docs API authenticated successfully")
+            logging.info(f"Google Docs API authenticated successfully for {self.service_account_email}")
         except Exception as e:
             logging.error(f"Failed to authenticate with Google Docs API: {e}")
     

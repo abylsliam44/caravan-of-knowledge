@@ -1,0 +1,127 @@
+{
+  "name": "WhatsApp AI Agent - Basic",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-agent",
+        "options": {},
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные от FastAPI бота\nconst requestBody = $input.item.json.body;\nconst phone = requestBody.phone;\nconst message = requestBody.message;\nconst chatHistory = requestBody.chat_history || [];\nconst isFirst = requestBody.is_first_message || false;\n\n// Используем промпт из Google Docs (если есть) или дефолтный\nlet systemPrompt = requestBody.system_prompt || `Вы - опытный менеджер компании \"Caravan of Knowledge\".\nОтвечайте кратко и профессионально на вопросы о STEAM-курсах.`;\n\n// Формируем messages для OpenAI\nconst messages = [\n  { role: \"system\", content: systemPrompt }\n];\n\n// Добавляем историю чата\nif (chatHistory && chatHistory.length > 0) {\n  messages.push(...chatHistory);\n}\n\n// Добавляем текущее сообщение\nmessages.push({ role: \"user\", content: message });\n\nreturn {\n  messages: messages,\n  phone: phone,\n  original_message: message,\n  is_first: isFirst\n};"
+      },
+      "id": "code-1",
+      "name": "Process Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 512
+        }
+      },
+      "id": "openai-1",
+      "name": "OpenAI GPT-4o",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем ответ от GPT\nconst messages = $input.item.json.messages;\nconst phone = $input.item.json.phone;\nconst originalMessage = $input.item.json.original_message;\n\n// Создаем запрос к OpenAI\nconst response = await $httpRequest({\n  url: 'https://api.openai.com/v1/chat/completions',\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${$env.OPENAI_API_KEY}`,\n    'Content-Type': 'application/json'\n  },\n  body: {\n    model: 'gpt-4o',\n    messages: messages,\n    temperature: 0.7,\n    max_tokens: 512\n  }\n});\n\nconst gptResponse = response.choices[0].message.content;\n\nreturn {\n  phone: phone,\n  response: gptResponse,\n  agent_used: \"basic_gpt_agent\",\n  sources: [],\n  original_message: originalMessage,\n  tokens_used: response.usage.total_tokens\n};"
+      },
+      "id": "code-2",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Input": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-10-26T12:00:00.000Z",
+      "updatedAt": "2024-10-26T12:00:00.000Z",
+      "id": "1",
+      "name": "whatsapp"
+    },
+    {
+      "createdAt": "2024-10-26T12:00:00.000Z",
+      "updatedAt": "2024-10-26T12:00:00.000Z",
+      "id": "2",
+      "name": "ai-agent"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-10-26T12:00:00.000Z",
+  "versionId": "1"
+}
+
