@@ -64,6 +64,18 @@ services:
       - key: DATABASE_URL
         sync: false  # Подключите Render PostgreSQL
       
+      # AI Agent settings (настройки автономного агента)
+      - key: USE_AI_AGENT
+        value: true  # false = простой бот, true = AI-агент с инструментами
+      - key: MANAGER_PHONE_NUMBER
+        sync: false  # Номер менеджера в WhatsApp для уведомлений
+      
+      # Notion (опционально, для регистрации студентов)
+      - key: NOTION_TOKEN
+        sync: false
+      - key: NOTION_DATABASE_ID
+        sync: false
+      
       # Memory settings (настройки памяти чатов)
       - key: MAX_CHAT_HISTORY
         value: 50

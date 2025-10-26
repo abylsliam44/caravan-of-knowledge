@@ -6,7 +6,8 @@ import os
 import httpx
 from datetime import datetime
 
-from gpt import ask_gpt
+from gpt import ask_gpt  # Fallback для обратной совместимости
+from ai_agent import ai_agent  # AI Agent с Function Calling
 from whatsapp import send_whatsapp_message, test_green_api_connection
 from whisper_recognition import speech_service
 from chat_memory import chat_memory
@@ -157,10 +158,10 @@ async def receive_greenapi_webhook(payload: dict):
                 logging.error(f"n8n error: {e}, fallback to direct GPT")
                 # Fallback на обычный GPT если n8n не доступен
         
-        # Получаем ответ от GPT напрямую (без n8n)
-        logging.info(f"Передаём в GPT напрямую: {text}")
-        gpt_response = await ask_gpt(text, from_number, is_first_message=is_first)
-        logging.info(f"Ответ GPT: {gpt_response}")
+        # Получаем ответ от AI Agent (с Function Calling) или GPT напрямую
+        logging.info(f"Передаём в AI Agent: {text}")
+        gpt_response = await ai_agent.process_message(text, from_number, is_first_message=is_first)
+        logging.info(f"Ответ AI Agent: {gpt_response}")
 
         # Отправляем ответ клиенту
         logging.info(f"Отправляем ответ через send_whatsapp_message: {from_number} -> {gpt_response}")
